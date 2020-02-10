@@ -1,0 +1,118 @@
+pragma solidity ^0.4.21;
+
+contract Agro{
+    
+    //address public myAddress = 0xCA35b7d915458EF540aDe6068dFe2F44E8fa733c;
+    
+    mapping(address=> uint256) public boughtAmountOfFertilizerInEther; //bought amount of fertilizer in ether of each farmer
+    mapping(address=> uint256) public rentedLandPrice;    //amount of ether has to pay the landlord
+    mapping(address=> address) public landlord;     //store landlord coresponding to farmer
+    mapping(address=> uint256) farmerIndexInArray; //farmer array index will store here according to its addrress escape loops
+    //address payable [] farmer = [0x14723A09ACff6D2A60DcdF7aA4AFf308FDDC160C ,0x4B0897b0513fdC7C541B6d9D7E929C4e5364D2dB  
+    //                       ,0x583031D1113aD414F02576BD6afaBfb302140225  ];
+    address [] public farmer;  //farmers array which store each farmer address
+    //address [] public landloard; // landlord array where it stores landlord address
+    //address payable wallet;         // ex firtilizer account
+    address public market; //market address from where atlast money will be distributed
+    address public fertilizer; //where fertilizer borrowed fertilizer price will be sent
+    address owner;                 // contract deployer
+    
+    uint256 public fertilizerCost;  //shows fertilizer cost w.r.t required amount
+    uint256 public perKgPriceInGwei;// shows how much a kg cost
+    uint256 takaToGwei=100000;      // 1BDT =100000GWEI
+    uint256 farmerArrayTracker=0;   // this is used to give indexes to every new farmer hwo bought firtilizer
+    
+    event purchase(
+        address indexed _farmer_address,// indexed for for particular account
+        uint256 _bought_amount_of_firtilizer_in_ether
+        );
+        
+        
+    //constructor
+    function Agro(address _owner) public {
+        owner = _owner;
+    }
+    /*constructor (address _owner) public{ // constructor just assigning who depoyed the contract
+        //wallet =_wallet;
+        owner = _owner;
+    }*/
+    
+    modifier isOwner(){
+        require(owner == msg.sender);
+        _;
+    }//verifies that logged in user is the owner
+    modifier isNotOwner(){
+        require(owner != msg.sender);
+        _;
+    }//verifies that logged in user is not the owner
+    modifier isMarket(){  
+        require(market==msg.sender);
+        _;
+    }//verifies that logged in user is the market
+    modifier isFertilizer(){  
+        require(fertilizer==msg.sender);
+        _;
+    }
+    modifier isFarmer(address _farmer){
+       uint256 _tracker = uint256(farmerIndexInArray[msg.sender]);
+       require(farmer[_tracker]==_farmer);
+       _;
+    }//verifies that address is address of a farmer
+    
+
+    function buy_fertilizer(uint256 _money) isNotOwner public {
+        boughtAmountOfFertilizerInEther[msg.sender]+= _money;
+        rentedLandPrice[msg.sender]=0;
+        uint256 _tracker = uint256(farmerIndexInArray[msg.sender]);
+        if( (((farmerArrayTracker==0)&&(_tracker==0))||(farmer[_tracker]!=msg.sender))){
+            farmer.push(msg.sender);
+            farmerIndexInArray[msg.sender]=farmerArrayTracker;
+            farmerArrayTracker++;
+        }
+        //wallet.transfer(msg.value);  // actually transfer ether to ex fertilizer
+        emit purchase(msg.sender, _money);// to show the loggs
+    }//enter borrowed fertilizer cost and enters farmers in array
+    function set_landlord_price(uint256 _money, address _address) public{
+        rentedLandPrice[msg.sender]=_money;
+        landlord[msg.sender]=_address;
+    }
+    function set_fertilizer_price_per_kg_in_tk(uint256 _price) isFertilizer public{
+        perKgPriceInGwei = _price*takaToGwei;
+    }//owner enters fertilizer price for a season in taka
+    function required_firtilizer_in_kg(uint256 _amount) isNotOwner public{
+        fertilizerCost = _amount*perKgPriceInGwei;
+    }//farmer enters needed amount of fertilizer to know the cost
+    function set_market_for_a_season(address _market) isOwner public{
+        market=_market;// ocontract deployer is selecting market
+    }// set market account for a season
+    function set_fertilizer_com_for_a_season(address _fertilizer) isOwner public{
+        fertilizer=_fertilizer;// ocontract deployer is selecting market
+    }//set fertilizer company for as season
+    function send_money_to_farmer(address _farmer) isMarket payable public{
+        uint256 _fertilizerLoan=boughtAmountOfFertilizerInEther[_farmer]; //temporary calling each farmer fertilizer loan
+        if(msg.value<=_fertilizerLoan){ // if sold crops money are less then or equal to farmers fertilizer loan
+            uint256 _fdue=_fertilizerLoan-msg.value;
+            fertilizer.transfer(msg.value);
+            boughtAmountOfFertilizerInEther[_farmer]=_fdue;
+        }else if(msg.value>_fertilizerLoan){// if farmers sold crops money is greater then farmers fertilizer loan
+            uint256 _farmerProfit=msg.value-_fertilizerLoan;
+            fertilizer.transfer(_fertilizerLoan);
+            boughtAmountOfFertilizerInEther[_farmer]=0;
+        }else{ // still not implimented if farmer didn't bought any fertilizer
+            _farmer.transfer(msg.value);
+        }
+        uint256 _landlordLoan=rentedLandPrice[_farmer]; //temporary calling land price of each farmer
+        address _landlord=landlord[_farmer]; // temporary calling landlord addres of that corresponding farmer
+        if(_farmerProfit<=_landlordLoan){  // checking if farmer has loan from land lord and if remaining money is less then land loan 
+                uint256 _ldue=_landlordLoan-_farmerProfit;
+                _landlord.transfer(_farmerProfit);
+                rentedLandPrice[_farmer]=_ldue;
+            }else if(_farmerProfit>_landlordLoan){ //if remaining money is greater then land loan
+                _farmerProfit= _farmerProfit-_landlordLoan;
+                _landlord.transfer(_landlordLoan);
+                rentedLandPrice[_farmer]=0;
+                _farmer.transfer(_farmerProfit);// send money to farmer
+            }
+    }//markets sends money to farmers at every sell of farmer crops
+    
+}
